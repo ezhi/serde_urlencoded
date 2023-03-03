@@ -217,18 +217,18 @@ where
     ) -> Result<(), Error> {
         match mem::replace(&mut self.state, PairState::Done) {
             PairState::WaitingForKey => {
-                let key_sink = KeySink::new(|key| Ok(key.into()));
-                let key_serializer = PartSerializer::new(key_sink);
+                let mut key_sink = KeySink::new(|key| Ok(key.into()));
+                let mut key_serializer = PartSerializer::new(&mut key_sink);
                 self.state = PairState::WaitingForValue {
-                    key: value.serialize(key_serializer)?,
+                    key: value.serialize(&mut key_serializer)?,
                 };
                 Ok(())
             }
             PairState::WaitingForValue { key } => {
                 let result = {
-                    let value_sink = ValueSink::new(self.urlencoder, &key);
-                    let value_serializer = PartSerializer::new(value_sink);
-                    value.serialize(value_serializer)
+                    let mut value_sink = ValueSink::new(self.urlencoder, &key);
+                    let mut value_serializer = PartSerializer::new(&mut value_sink);
+                    value.serialize(&mut value_serializer)
                 };
                 if result.is_ok() {
                     self.state = PairState::Done;

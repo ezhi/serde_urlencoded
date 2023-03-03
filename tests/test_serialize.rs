@@ -102,3 +102,33 @@ fn serialize_unit_struct() {
 fn serialize_unit_type() {
     assert_eq!(serde_urlencoded::to_string(()), Ok("".to_owned()));
 }
+
+#[derive(Serialize)]
+struct WithVec {
+    one: Option<Vec<i32>>,
+    two: Option<Vec<i32>>,
+}
+
+#[test]
+fn serialize_vec_struct() {
+    let query = WithVec { one: Some(vec![1]), two: Some(vec![1,2]) };
+    assert_eq!(serde_urlencoded::to_string(query), Ok("one=1&two=1&two=2".to_owned()));
+}
+
+#[test]
+fn serialize_empty_vec_struct() {
+    let query = WithVec { one: Some(vec![]), two: Some(vec![1,2]) };
+    assert_eq!(serde_urlencoded::to_string(query), Ok("one=&two=1&two=2".to_owned()));
+}
+
+#[test]
+fn serialize_vec_pairs() {
+    let query = vec![("one", Some(vec![1])), ("two", Some(vec![1,2]))];
+    assert_eq!(serde_urlencoded::to_string(query), Ok("one=1&two=1&two=2".to_owned()));
+}
+
+#[test]
+fn serialize_empty_vec_pairs() {
+    let query = vec![("one", Some(vec![])), ("two", Some(vec![1,2]))];
+    assert_eq!(serde_urlencoded::to_string(query), Ok("one=&two=1&two=2".to_owned()));
+}

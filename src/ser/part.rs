@@ -2,13 +2,43 @@ use crate::ser::Error;
 use serde::ser;
 use std::str;
 
-pub struct PartSerializer<S> {
-    sink: S,
+pub struct PartSerializer<'a, S> {
+    sink: &'a mut S,
 }
 
-impl<S: Sink> PartSerializer<S> {
-    pub fn new(sink: S) -> Self {
+impl<'a, S: Sink> PartSerializer<'a, S> {
+    pub fn new(sink: &'a mut S) -> Self {
         PartSerializer { sink }
+    }
+}
+
+pub struct SeqSerializer<'a, S> {
+    sink: &'a mut S,
+    size: Option<usize>,
+}
+
+impl<'a, S: Sink> SeqSerializer<'a, S> {
+    fn new(sink: &'a mut S, size: Option<usize>) -> Self {
+        Self { sink, size }
+    }
+}
+
+impl<'a, S: Sink> ser::SerializeSeq for SeqSerializer<'a, S> {
+    type Ok = S::Ok;
+    type Error = Error;
+
+    fn serialize_element<T: ?Sized + ser::Serialize>(
+        &mut self,
+        value: &T,
+    ) -> Result<(), Error> {
+        self.sink.serialize_some(value).map(|_| ())
+    }
+
+    fn end(self) -> Result<Self::Ok, Error> {
+        match self.size {
+            Some(0) => self.sink.serialize_some(""),
+            _       => self.sink.serialize_none(),
+        }
     }
 }
 
@@ -16,26 +46,26 @@ pub trait Sink: Sized {
     type Ok;
 
     fn serialize_static_str(
-        self,
+        &mut self,
         value: &'static str,
     ) -> Result<Self::Ok, Error>;
 
-    fn serialize_str(self, value: &str) -> Result<Self::Ok, Error>;
-    fn serialize_string(self, value: String) -> Result<Self::Ok, Error>;
-    fn serialize_none(self) -> Result<Self::Ok, Error>;
+    fn serialize_str(&mut self, value: &str) -> Result<Self::Ok, Error>;
+    fn serialize_string(&mut self, value: String) -> Result<Self::Ok, Error>;
+    fn serialize_none(&mut self) -> Result<Self::Ok, Error>;
 
     fn serialize_some<T: ?Sized + ser::Serialize>(
-        self,
+        &mut self,
         value: &T,
     ) -> Result<Self::Ok, Error>;
 
-    fn unsupported(self) -> Error;
+    fn unsupported(&mut self) -> Error;
 }
 
-impl<S: Sink> ser::Serializer for PartSerializer<S> {
+impl<'a, S: Sink> ser::Serializer for &'a mut PartSerializer<'a, S> {
     type Ok = S::Ok;
     type Error = Error;
-    type SerializeSeq = ser::Impossible<S::Ok, Error>;
+    type SerializeSeq = SeqSerializer<'a, S>;
     type SerializeTuple = ser::Impossible<S::Ok, Error>;
     type SerializeTupleStruct = ser::Impossible<S::Ok, Error>;
     type SerializeTupleVariant = ser::Impossible<S::Ok, Error>;
@@ -159,9 +189,9 @@ impl<S: Sink> ser::Serializer for PartSerializer<S> {
 
     fn serialize_seq(
         self,
-        _len: Option<usize>,
+        len: Option<usize>,
     ) -> Result<Self::SerializeSeq, Error> {
-        Err(self.sink.unsupported())
+        Ok(Self::SerializeSeq::new(self.sink, len))
     }
 
     fn serialize_tuple(
@@ -215,8 +245,8 @@ impl<S: Sink> ser::Serializer for PartSerializer<S> {
     }
 }
 
-impl<S: Sink> PartSerializer<S> {
-    fn serialize_integer<I>(self, value: I) -> Result<S::Ok, Error>
+impl<'a, S: Sink> PartSerializer<'a, S> {
+    fn serialize_integer<I>(&'a mut self, value: I) -> Result<S::Ok, Error>
     where
         I: itoa::Integer,
     {
@@ -225,7 +255,7 @@ impl<S: Sink> PartSerializer<S> {
         ser::Serializer::serialize_str(self, part)
     }
 
-    fn serialize_floating<F>(self, value: F) -> Result<S::Ok, Error>
+    fn serialize_floating<F>(&'a mut self, value: F) -> Result<S::Ok, Error>
     where
         F: ryu::Float,
     {

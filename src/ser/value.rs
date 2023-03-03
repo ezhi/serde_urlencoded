@@ -32,31 +32,31 @@ where
 {
     type Ok = ();
 
-    fn serialize_str(self, value: &str) -> Result<(), Error> {
+    fn serialize_str(&mut self, value: &str) -> Result<(), Error> {
         self.urlencoder.append_pair(self.key, value);
         Ok(())
     }
 
-    fn serialize_static_str(self, value: &'static str) -> Result<(), Error> {
+    fn serialize_static_str(&mut self, value: &'static str) -> Result<(), Error> {
         self.serialize_str(value)
     }
 
-    fn serialize_string(self, value: String) -> Result<(), Error> {
+    fn serialize_string(&mut self, value: String) -> Result<(), Error> {
         self.serialize_str(&value)
     }
 
-    fn serialize_none(self) -> Result<Self::Ok, Error> {
+    fn serialize_none(&mut self) -> Result<Self::Ok, Error> {
         Ok(())
     }
 
     fn serialize_some<T: ?Sized + Serialize>(
-        self,
+        &mut self,
         value: &T,
     ) -> Result<Self::Ok, Error> {
-        value.serialize(PartSerializer::new(self))
+        value.serialize(&mut PartSerializer::new(self))
     }
 
-    fn unsupported(self) -> Error {
+    fn unsupported(&mut self) -> Error {
         Error::Custom("unsupported value".into())
     }
 }

@@ -1,8 +1,9 @@
 //! Deserialization support for the `application/x-www-form-urlencoded` format.
 
+use indexmap::{IndexMap, map::IntoIter};
 use form_urlencoded::parse;
 use form_urlencoded::Parse as UrlEncodedParse;
-use serde::de::value::MapDeserializer;
+use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::Error as de_Error;
 use serde::de::{self, IntoDeserializer};
 use serde::forward_to_deserialize_any;
@@ -80,14 +81,22 @@ where
 /// * Everything else but `deserialize_seq` and `deserialize_seq_fixed_size`
 ///   defers to `deserialize`.
 pub struct Deserializer<'de> {
-    inner: MapDeserializer<'de, PartIterator<'de>, Error>,
+    inner: MapDeserializer<'de, IntoIter<Part<'de>, Parts<'de>>, Error>,
 }
 
 impl<'de> Deserializer<'de> {
     /// Returns a new `Deserializer`.
     pub fn new(parser: UrlEncodedParse<'de>) -> Self {
+        let mut map: IndexMap<Part, Parts> = IndexMap::new();
+
+        for (k, v) in parser {
+            map.entry(Part(k))
+                .or_insert_with(|| Parts(Part(v.clone()), Vec::new()))
+                .1.push(Part(v));
+        }
+
         Deserializer {
-            inner: MapDeserializer::new(PartIterator(parser)),
+            inner: MapDeserializer::new(map.into_iter())
         }
     }
 }
@@ -153,19 +162,20 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
     }
 }
 
-struct PartIterator<'de>(UrlEncodedParse<'de>);
+#[derive(Eq, PartialEq, Hash)]
+struct Part<'de>(Cow<'de, str>);
 
-impl<'de> Iterator for PartIterator<'de> {
-    type Item = (Part<'de>, Part<'de>);
+struct Parts<'de>(Part<'de>, Vec<Part<'de>>);
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|(k, v)| (Part(k), Part(v)))
+impl<'de> IntoDeserializer<'de> for Part<'de> {
+    type Deserializer = Self;
+
+    fn into_deserializer(self) -> Self::Deserializer {
+        self
     }
 }
 
-struct Part<'de>(Cow<'de, str>);
-
-impl<'de> IntoDeserializer<'de> for Part<'de> {
+impl<'de> IntoDeserializer<'de> for Parts<'de> {
     type Deserializer = Self;
 
     fn into_deserializer(self) -> Self::Deserializer {
@@ -180,6 +190,21 @@ macro_rules! forward_parsed_value {
                 where V: de::Visitor<'de>
             {
                 match self.0.parse::<$ty>() {
+                    Ok(val) => val.into_deserializer().$method(visitor),
+                    Err(e) => Err(de::Error::custom(e))
+                }
+            }
+        )*
+    }
+}
+
+macro_rules! forward_parsed_values {
+    ($($ty:ident => $method:ident,)*) => {
+        $(
+            fn $method<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+                where V: de::Visitor<'de>
+            {
+                match (self.0).0.parse::<$ty>() {
                     Ok(val) => val.into_deserializer().$method(visitor),
                     Err(e) => Err(de::Error::custom(e))
                 }
@@ -205,7 +230,12 @@ impl<'de> de::Deserializer<'de> for Part<'de> {
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_some(self)
+        if self.0 == "" {
+            visitor.visit_none()
+        }
+        else {
+            visitor.visit_some(self)
+        }
     }
 
     fn deserialize_enum<V>(
@@ -249,6 +279,89 @@ impl<'de> de::Deserializer<'de> for Part<'de> {
     }
 
     forward_parsed_value! {
+        bool => deserialize_bool,
+        u8 => deserialize_u8,
+        u16 => deserialize_u16,
+        u32 => deserialize_u32,
+        u64 => deserialize_u64,
+        i8 => deserialize_i8,
+        i16 => deserialize_i16,
+        i32 => deserialize_i32,
+        i64 => deserialize_i64,
+        f32 => deserialize_f32,
+        f64 => deserialize_f64,
+    }
+}
+
+impl<'de> de::Deserializer<'de> for Parts<'de> {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        let v = (self.0).0;
+        match v {
+            Cow::Borrowed(value) => visitor.visit_borrowed_str(value),
+            Cow::Owned(value) => visitor.visit_string(value),
+        }
+    }
+
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_some(self)
+    }
+
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_seq(SeqDeserializer::new((self.1).into_iter()))
+    }
+
+    fn deserialize_enum<V>(
+        self,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        let v = (self.0).0;
+        visitor.visit_enum(ValueEnumAccess(v))
+    }
+
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
+    forward_to_deserialize_any! {
+        char
+        str
+        string
+        unit
+        bytes
+        byte_buf
+        unit_struct
+        tuple_struct
+        struct
+        identifier
+        tuple
+        ignored_any
+        map
+    }
+
+    forward_parsed_values! {
         bool => deserialize_bool,
         u8 => deserialize_u8,
         u16 => deserialize_u16,

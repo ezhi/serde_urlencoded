@@ -35,7 +35,7 @@ pub struct KeySink<End> {
 
 impl<End, Ok> KeySink<End>
 where
-    End: for<'key> FnOnce(Key<'key>) -> Result<Ok, Error>,
+    End: for<'key> FnMut(Key<'key>) -> Result<Ok, Error>,
 {
     pub fn new(end: End) -> Self {
         KeySink { end }
@@ -44,34 +44,34 @@ where
 
 impl<End, Ok> Sink for KeySink<End>
 where
-    End: for<'key> FnOnce(Key<'key>) -> Result<Ok, Error>,
+    End: for<'key> FnMut(Key<'key>) -> Result<Ok, Error>,
 {
     type Ok = Ok;
 
-    fn serialize_static_str(self, value: &'static str) -> Result<Ok, Error> {
+    fn serialize_static_str(&mut self, value: &'static str) -> Result<Ok, Error> {
         (self.end)(Key::Static(value))
     }
 
-    fn serialize_str(self, value: &str) -> Result<Ok, Error> {
+    fn serialize_str(&mut self, value: &str) -> Result<Ok, Error> {
         (self.end)(Key::Dynamic(value.into()))
     }
 
-    fn serialize_string(self, value: String) -> Result<Ok, Error> {
+    fn serialize_string(&mut self, value: String) -> Result<Ok, Error> {
         (self.end)(Key::Dynamic(value.into()))
     }
 
-    fn serialize_none(self) -> Result<Ok, Error> {
+    fn serialize_none(&mut self) -> Result<Ok, Error> {
         Err(self.unsupported())
     }
 
     fn serialize_some<T: ?Sized + Serialize>(
-        self,
+        &mut self,
         _value: &T,
     ) -> Result<Ok, Error> {
         Err(self.unsupported())
     }
 
-    fn unsupported(self) -> Error {
+    fn unsupported(&mut self) -> Error {
         Error::Custom("unsupported key".into())
     }
 }

@@ -461,23 +461,23 @@ where
         key: &K,
         value: &V,
     ) -> Result<(), Error> {
-        let key_sink = key::KeySink::new(|key| {
-            let value_sink = value::ValueSink::new(self.urlencoder, &key);
-            value.serialize(part::PartSerializer::new(value_sink))?;
+        let mut key_sink = key::KeySink::new(|key| {
+            let mut value_sink = value::ValueSink::new(self.urlencoder, &key);
+            value.serialize(&mut part::PartSerializer::new(&mut value_sink))?;
             self.key = None;
             Ok(())
         });
-        let entry_serializer = part::PartSerializer::new(key_sink);
-        key.serialize(entry_serializer)
+        let mut entry_serializer = part::PartSerializer::new(&mut key_sink);
+        key.serialize(&mut entry_serializer)
     }
 
     fn serialize_key<T: ?Sized + ser::Serialize>(
         &mut self,
         key: &T,
     ) -> Result<(), Error> {
-        let key_sink = key::KeySink::new(|key| Ok(key.into()));
-        let key_serializer = part::PartSerializer::new(key_sink);
-        self.key = Some(key.serialize(key_serializer)?);
+        let mut key_sink = key::KeySink::new(|key| Ok(key.into()));
+        let mut key_serializer = part::PartSerializer::new(&mut key_sink);
+        self.key = Some(key.serialize(&mut key_serializer)?);
         Ok(())
     }
 
@@ -487,8 +487,8 @@ where
     ) -> Result<(), Error> {
         {
             let key = self.key.as_ref().ok_or_else(Error::no_key)?;
-            let value_sink = value::ValueSink::new(self.urlencoder, &key);
-            value.serialize(part::PartSerializer::new(value_sink))?;
+            let mut value_sink = value::ValueSink::new(self.urlencoder, &key);
+            value.serialize(&mut part::PartSerializer::new(&mut value_sink))?;
         }
         self.key = None;
         Ok(())
@@ -512,8 +512,8 @@ where
         key: &'static str,
         value: &T,
     ) -> Result<(), Error> {
-        let value_sink = value::ValueSink::new(self.urlencoder, key);
-        value.serialize(part::PartSerializer::new(value_sink))
+        let mut value_sink = value::ValueSink::new(self.urlencoder, key);
+        value.serialize(&mut part::PartSerializer::new(&mut value_sink))
     }
 
     fn end(self) -> Result<Self::Ok, Error> {

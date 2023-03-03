@@ -86,3 +86,32 @@ fn deserialize_unit_enum() {
 fn deserialize_unit_type() {
     assert_eq!(serde_urlencoded::from_str(""), Ok(()));
 }
+
+#[derive(Deserialize, Debug, PartialEq, Eq)]
+struct Y {
+    multi: Vec<u8>,
+    single: String,
+    multi2: Vec<String>,
+}
+
+#[test]
+fn deserialize_multi() {
+    let result = Y {
+        multi: vec![1, 2],
+        single: "foo".to_owned(),
+        multi2: vec!["aaa".to_owned()],
+    };
+    assert_eq!(
+        serde_urlencoded::from_str("multi=1&single=foo&multi=2&multi2=aaa"),
+        Ok(result)
+    );
+}
+
+#[test]
+fn deserialize_multi_none() {
+    let result = vec![("none".to_string(), vec![None]), ("some".to_string(), vec![Some(1), Some(2)])];
+    assert_eq!(
+        serde_urlencoded::from_str("none=&some=1&some=2"),
+        Ok(result)
+    );
+}
